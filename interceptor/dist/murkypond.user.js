@@ -19,7 +19,7 @@
     // CONFIGURATION
     // ==========================================
     const CONFIG = {
-        firebaseProjectId: 'YOUR-FIREBASE-PROJECT-ID', 
+        firebaseProjectId: 'murkypond-vault-fc61c', 
         defaultBoard: '12214', 
         logLevel: 3 
     };
@@ -450,6 +450,7 @@
     }
 
 })();
+
 
 
 
