@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MurkyPond (Okoun Bunker)
 // @namespace    http://tampermonkey.net/
-// @version      0.1.4
+// @version      0.1.5
 // @description  Client-side failover system for okoun.cz 502 timeouts.
 // @author       hanenashi
 // @match        http://*.okoun.cz/*
@@ -193,21 +193,35 @@
             `).join('');
         });
 
-        // 2. Initialize the Chat Engine (FORCED)
+        // 2. Initialize the Chat Engine (FORCED & DEDUPLICATED)
         const chatMsgs = shadow.getElementById('chat-msgs');
+        const renderedMsgs = new Set(); // The "Bouncer" memory bank
+
         vault.connectChat(boardId, (msgData) => {
             if(!msgData) return;
             
             // Handle bulk sync vs individual new messages
             const messages = msgData.user ? [msgData] : Object.values(msgData);
             
+            // Clear the "Initializing" system message on first payload
+            if(chatMsgs.innerHTML.includes('Initializing')) chatMsgs.innerHTML = '';
+            
             messages.forEach(msg => {
                 if(!msg || !msg.text) return;
+                
+                // Create a unique fingerprint for the message
+                const signature = `${msg.user}-${msg.ts || msg.text}`;
+                
+                // If the Bouncer has already seen this fingerprint, skip it!
+                if (renderedMsgs.has(signature)) return; 
+                renderedMsgs.add(signature); // Add to memory bank
+
                 // Basic sanitization
                 const safeUser = (msg.user || 'Anon').replace(/</g, "&lt;");
                 const safeText = (msg.text || '').replace(/</g, "&lt;");
                 
-                chatMsgs.innerHTML += `<div class="chat-msg"><span class="chat-author">${safeUser}:</span> ${safeText}</div>`;
+                // Insert efficiently without redrawing the whole DOM
+                chatMsgs.insertAdjacentHTML('beforeend', `<div class="chat-msg"><span class="chat-author">${safeUser}:</span> ${safeText}</div>`);
             });
             chatMsgs.scrollTop = chatMsgs.scrollHeight;
         });
