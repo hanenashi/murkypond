@@ -184,13 +184,24 @@
 
     const detectCrash = () => {
         // OVERRIDE: If the dev toggle is on, instantly trigger the hijack.
-        if (isForceMode) return true;
+        if (typeof isForceMode !== 'undefined' && isForceMode) return true;
 
         const title = document.title || '';
+        
+        // 1. Title Check: Regex handles "502 Bad Gateway", "502: Bad gateway", etc. (Case insensitive)
+        const is502Title = /502.*bad gateway/i.test(title) || /504.*gateway/i.test(title);
+        
+        // 2. DOM Check: Extremely reliable if the body has started loading
+        const hasCFErrorDiv = !!document.getElementById('cf-error-details');
+        
+        // 3. Body Text Fallback: Just in case the DOM structure changes again
         const bodyText = document.body ? document.body.innerText : '';
-        return title.includes('502 Bad Gateway') || title.includes('504 Gateway') || bodyText.includes('cloudflare-nginx');
-    };
+        const isCFBody = bodyText.includes('Error code 502') || bodyText.includes('Cloudflare Ray ID');
 
+        return is502Title || hasCFErrorDiv || isCFBody;
+    };
+    
+    
     const initiateHijack = () => {
         Log.info('💥 502 DETECTED. INITIATING HIJACK.');
         window.stop();
@@ -439,4 +450,5 @@
     }
 
 })();
+
 
