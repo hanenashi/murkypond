@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MurkyPond (Okoun Bunker)
 // @namespace    http://tampermonkey.net/
-// @version      0.1.5
+// @version      0.1.6
 // @description  Client-side failover system for okoun.cz 502 timeouts.
 // @author       hanenashi
 // @match        http://*.okoun.cz/*
@@ -73,18 +73,28 @@
         }
 
         async fetchArchive(clubId) {
-            Log.info(`Fetching archive for club: ${clubId}`);
+            // Clean the clubId to ensure no trailing slashes from the Regex break the path
+            const cleanId = clubId.replace(/\/$/, "");
+            const url = `${this.restBase}/clubs/${cleanId}/posts?orderBy=ts desc&pageSize=50`;
+            
+            Log.info(`[Vault] Attempting REST pull: ${url}`);
+            
             try {
-                const res = await fetch(`${this.restBase}/clubs/${clubId}/posts?orderBy=ts desc&pageSize=50`);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const res = await fetch(url);
+                if (!res.ok) {
+                    Log.error(`[Vault] Server returned ${res.status}. Check if collection 'clubs/${cleanId}/posts' exists.`);
+                    return [];
+                }
                 const data = await res.json();
+                Log.debug(`[Vault] Received ${data.documents ? data.documents.length : 0} documents.`);
+                
                 return (data.documents || []).map(doc => ({
                     id: doc.fields.p_id.integerValue,
                     author: doc.fields.auth.stringValue,
                     html: doc.fields.html.stringValue
                 }));
             } catch (err) {
-                Log.error('Archive fetch failed:', err);
+                Log.error('[Vault] Fetch encountered a network error:', err);
                 return [];
             }
         }
@@ -244,10 +254,24 @@
     // ==========================================
     // MODULE 4: HIJACK LOGIC
     // ==========================================
-    const trackLocation = () => {
+    const extractBoardId = () => {
+        // 1. Try URL parameters first (e.g., ?boardId=12214)
         const params = new URLSearchParams(window.location.search);
-        const bId = params.get('boardId');
-        if (bId) Storage.set('last_board_id', bId);
+        if (params.get('boardId')) return params.get('boardId');
+
+        // 2. Fallback to URL path using Regex (e.g., /boards/prezident_donald...)
+        const match = window.location.pathname.match(/\/boards\/([^\/]+)/);
+        if (match) return match[1]; // Returns exactly the club name
+        
+        return null;
+    };
+
+    const trackLocation = () => {
+        const bId = extractBoardId();
+        if (bId) {
+            Storage.set('last_board_id', bId);
+            Log.debug(`Healthy page. Tracking board: ${bId}`);
+        }
     };
 
     const detectCrash = () => {
@@ -277,8 +301,12 @@
         mountBunker(targetBoard, vault);
     };
 
-    trackLocation();
+    // --- EXECUTION FLOW ---
+    
+    // 1. Always try to save the current location first
+    trackLocation(); 
 
+    // 2. Then check if we need to nuke the page
     if (detectCrash()) {
         initiateHijack();
     } else {
